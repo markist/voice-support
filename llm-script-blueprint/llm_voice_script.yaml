@@ -406,7 +406,7 @@ sequence:
     action_data:
       media_id: '{{ media_id.split('';'') | map(''trim'') | list if '';'' in media_id
         else media_id }}'
-      media_type: "{{ 'podcast_episode' if media_type == 'podcast' else media_type }}"
+      media_type: '{{ media_type }}'
       artist: '{{ artist | default(''NA'', true) }}'
       album: '{{ album | default(''NA'', true) }}'
       radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
