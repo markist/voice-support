@@ -1,6 +1,6 @@
 blueprint:
   name: LLM Script for Music Assistant voice requests
-  source_url: https://github.com/music-assistant/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
+  source_url: https://github.com/markist/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
   description: '![Image](https://github.com/music-assistant/voice-support/blob/main/assets/music-assistant.png?raw=true)
 
     # Creates a script which will allow voice requests for Music Assistant
@@ -38,7 +38,7 @@ blueprint:
     separated by a semicolon (`;`)|
 
     |`media_type`|Will be one of the following: `"track"`, `"artist"`, `"album"`,
-    `"playlist"`, `"radio"`|
+    `"playlist"`, `"radio"`, , `"podcast"`|
 
     |`artist`|The artist requested in the voice command. Will be empty in case the
     artist is not relevant or when there are multiple artists requested|
@@ -138,7 +138,7 @@ blueprint:
           default: 'This argument is mandatory and must always be provided no matter
             what!
 
-            "media_type" can only be one of 5 different values:
+            "media_type" can only be one of 7 different values:
 
             - "track" if the search is about a specific track or a list of tracks.
 
@@ -150,10 +150,13 @@ blueprint:
 
             - "radio" if the search is a radio channel.
 
+            - "podcast": for a podcast series.
+            
+            - "podcast_episode": for a specific episode of a podcast.
+
             media_type is mandatory and must always be provided. If a request does
             not match any of these types, for example when music from a specific genre
-            is requested, then use "track" and provide a list of matching songs for
-            the "media_id" parameter.'
+            is requested, then use "playlist".'
         artist_prompt:
           name: Artist Prompt
           description: The prompt that the LLM will use to provide the artist.
@@ -163,7 +166,7 @@ blueprint:
               multiple: false
           default: '"artist" is the artist the user requests to play, or the artist
             of a specific track if the user mentions it while requesting to play a
-            specific song. If the artist is unknown or there are multiple artists
+            specific song OR the podcast creator/host. If the artist is unknown or there are multiple artists
             requested, use an empty string.'
         album_prompt:
           name: Album Prompt
@@ -174,7 +177,7 @@ blueprint:
               multiple: false
           default: '"album" is the album the user requests to play, or the album a
             specific track is from if the user mentions it when requesting to play
-            a specific song. If the album is unknown or there are multiple albums
+            a specific song or the podcast name if media_type is podcast_episode. If the album is unknown or there are multiple albums
             requested, use an empty string.'
         media_id_prompt:
           name: Media ID Prompt
@@ -207,6 +210,10 @@ blueprint:
             of "Favorite Songs playlist" return "Favorite Songs").
 
             - If the search is a radio channel: Then media_id is the requested channel.
+
+            - If the search is a podcast: provide the name of the podcast.
+
+            - If the search is a podcast_episode: provide the name of the episode.
 
             This is a mandatory argument and must always be provided.'
         media_description_prompt:
@@ -253,7 +260,7 @@ blueprint:
             if both are specifically used in the request.'
         shuffle_prompt:
           name: Shuffle Prompt
-          description: The prompt that the LLM will use to determine whether to turn on shuffle or not.
+          description: The prompt that the LLM will use to determine whether to turn on shuffle or not. Podcasts usually should not be shuffled.
           selector:
             text:
               multiline: true
@@ -302,6 +309,8 @@ fields:
         - artist
         - playlist
         - radio
+        - podcast
+        - podcast_episode
     name: Media Type
     description: !input media_type_prompt
     required: true
