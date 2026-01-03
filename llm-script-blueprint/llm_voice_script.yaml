@@ -393,18 +393,23 @@ sequence:
     then:
       - stop: No valid target for Music Assistant Voice script found
 
-  # -----------------------------------------------------------
-  # NEU: Der "Smart Search" Schritt
-  # Wir suchen erst, um die iTunes-URI zu bekommen!
+# -----------------------------------------------------------
+  # NEU: Intelligente Suche
+  # Falls Podcast/Episode gesucht wird -> Suche "podcast" (Container)
+  # Sonst -> Suche genau das, was das LLM wollte (track, artist, etc.)
   # -----------------------------------------------------------
   - action: music_assistant.search
     data:
       name: "{{ media_id }}"
-      media_type: "{{ media_type }}"
+      media_type: >
+        {% if media_type == 'podcast_episode' %}
+          podcast
+        {% else %}
+          {{ media_type }}
+        {% endif %}
       limit: 5
     response_variable: raw_result
-
-  # -----------------------------------------------------------
+# -----------------------------------------------------------
   # Datenaufbereitung & iTunes-Auswahl
   # -----------------------------------------------------------
   - variables:
@@ -412,26 +417,32 @@ sequence:
       action_data:
         artist: '{{ artist | default(''NA'', true) }}'
         album: '{{ album | default(''NA'', true) }}'
-        media_type: '{{ media_type }}'
         
-        # HIER IST DIE MAGIE:
-        media_id: >
-          {% set pods = raw_result.podcasts | default([]) %}
-          
-          {# Suche nach iTunes Provider URI #}
-          {% set itunes_matches = pods | selectattr('uri', 'match', '^itunes') | list %}
-          
-          {# Wenn iTunes gefunden wurde UND wir einen Podcast wollen -> Nimm iTunes URI #}
-          {% if media_type == 'podcast' and itunes_matches | length > 0 %}
-            {{ itunes_matches[0].uri }}
-          
-          {# Fallback: Nimm das, was das LLM gesagt hat (oder den ersten Treffer) #}
+        # Hilfsvariable: Haben wir eine iTunes-URI gefunden?
+        # Wir suchen nur danach, wenn der Typ podcast oder podcast_episode ist.
+        itunes_match: >
+          {% if media_type in ['podcast', 'podcast_episode'] %}
+            {% set pods = raw_result.podcasts | default([]) %}
+            {% set matches = pods | selectattr('uri', 'match', '^itunes') | list %}
+            {{ matches[0].uri if matches | length > 0 else 'NA' }}
           {% else %}
-             {{ media_id }}
+            NA
           {% endif %}
+
+        # Typ Bestimmung:
+        # Wenn wir iTunes gefunden haben, nutzen wir zwingend 'podcast' (startet neueste Folge).
+        # Ansonsten nutzen wir das, was das LLM wollte.
+        media_type: >
+          {{ 'podcast' if itunes_match != 'NA' else media_type }}
+        
+        # ID Bestimmung:
+        # Wenn iTunes gefunden -> URI nutzen.
+        # Sonst -> Die ursprüngliche media_id nutzen.
+        media_id: >
+          {{ itunes_match if itunes_match != 'NA' else (media_id.split(';')[0] | trim) }}
           
         radio_mode: >
-           {% if media_type == 'podcast' %}
+           {% if media_type == 'podcast' or itunes_match != 'NA' %}
              false
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
