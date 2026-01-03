@@ -411,39 +411,37 @@ sequence:
       limit: 5
     response_variable: raw_result
 # -----------------------------------------------------------
-  # Datenaufbereitung & iTunes-Auswahl
+# -----------------------------------------------------------
+  # Datenaufbereitung & iTunes-Auswahl (KORRIGIERT)
   # -----------------------------------------------------------
   - variables:
       play_continuously: !input play_continuously
+      
+      # 1. Zuerst die iTunes-URI berechnen (außerhalb von action_data!)
+      itunes_uri: >
+        {% if media_type in ['podcast', 'podcast_episode'] %}
+          {% set pods = raw_result.podcasts | default([]) %}
+          {% set matches = pods | selectattr('uri', 'match', '^itunes') | list %}
+          {{ matches[0].uri if matches | length > 0 else 'NA' }}
+        {% else %}
+          NA
+        {% endif %}
+
+      # 2. Das Paket für den Player schnüren
       action_data:
         artist: '{{ artist | default(''NA'', true) }}'
         album: '{{ album | default(''NA'', true) }}'
         
-        # Hilfsvariable: Haben wir eine iTunes-URI gefunden?
-        # Wir suchen nur danach, wenn der Typ podcast oder podcast_episode ist.
-        itunes_match: >
-          {% if media_type in ['podcast', 'podcast_episode'] %}
-            {% set pods = raw_result.podcasts | default([]) %}
-            {% set matches = pods | selectattr('uri', 'match', '^itunes') | list %}
-            {{ matches[0].uri if matches | length > 0 else 'NA' }}
-          {% else %}
-            NA
-          {% endif %}
-
-        # Typ Bestimmung:
-        # Wenn wir iTunes gefunden haben, nutzen wir zwingend 'podcast' (startet neueste Folge).
-        # Ansonsten nutzen wir das, was das LLM wollte.
+        # Typ Bestimmung: Wenn iTunes gefunden, dann 'podcast' (Container) nutzen
         media_type: >
-          {{ 'podcast' if itunes_match != 'NA' else media_type }}
+          {{ 'podcast' if itunes_uri != 'NA' else media_type }}
         
-        # ID Bestimmung:
-        # Wenn iTunes gefunden -> URI nutzen.
-        # Sonst -> Die ursprüngliche media_id nutzen.
+        # ID Bestimmung: iTunes URI oder Original Name
         media_id: >
-          {{ itunes_match if itunes_match != 'NA' else (media_id.split(';')[0] | trim) }}
+          {{ itunes_uri if itunes_uri != 'NA' else (media_id.split(';')[0] | trim) }}
           
         radio_mode: >
-           {% if media_type == 'podcast' or itunes_match != 'NA' %}
+           {% if media_type == 'podcast' or itunes_uri != 'NA' %}
              false
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
