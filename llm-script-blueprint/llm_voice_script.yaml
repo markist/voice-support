@@ -411,7 +411,7 @@ sequence:
   - variables:
       play_continuously: !input play_continuously
       
-      # SCHRITT A: Die Berechnung (MUSS AUSSERHALB VON action_data SEIN!)
+      # 1. URI Berechnung
       found_uri: >
         {% if media_type in ['podcast', 'podcast_episode'] %}
           {% set pods = raw_result.podcasts | default([]) %}
@@ -421,21 +421,23 @@ sequence:
           NA
         {% endif %}
 
-      # SCHRITT B: Das Paket für den Player (Darf NUR artist, album, media_type, media_id, radio_mode enthalten)
+      # 2. Paket schnüren
       action_data:
         artist: '{{ artist | default(''NA'', true) }}'
         album: '{{ album | default(''NA'', true) }}'
         
-        # Logik: Wenn wir eine iTunes URI haben, nehmen wir die. Sonst das Original.
         media_type: >
           {{ 'podcast' if found_uri != 'NA' else media_type }}
         
         media_id: >
           {{ found_uri if found_uri != 'NA' else (media_id.split(';')[0] | trim) }}
           
+        # HIER WAR DER FEHLER:
+        # Bei Podcasts muss radio_mode zwingend 'NA' sein (damit der Parameter gelöscht wird).
+        # False reicht nicht, der Key muss weg!
         radio_mode: >
-           {% if media_type == 'podcast' or found_uri != 'NA' %}
-             false
+           {% if media_type == 'podcast' or found_uri != 'NA' or media_type == 'podcast_episode' %}
+             NA
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
            {% endif %}
