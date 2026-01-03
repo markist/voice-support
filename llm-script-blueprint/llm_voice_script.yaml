@@ -400,6 +400,7 @@ sequence:
   # -----------------------------------------------------------
   - action: music_assistant.search
     data:
+      config_entry_id: 01JNPPZFB87GV8RBG5ARMMMY2F
       name: "{{ media_id }}"
       media_type: >
         {% if media_type == 'podcast_episode' %}
