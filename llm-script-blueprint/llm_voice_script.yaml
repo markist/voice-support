@@ -362,76 +362,93 @@ fields:
     name: Shuffle
     description: !input shuffle_prompt
 sequence:
-- variables:
-    version: 20250526
-    default_player: !input default_player
-    shuffle: '{{ shuffle | default(false, true) | bool(false) }}'
-    player_data: '{% set ma = integration_entities(''music_assistant'') %}
+  - variables:
+      # Inputs vorbereiten
+      version: 20250103
+      default_player: !input default_player
+      shuffle: '{{ shuffle | default(false, true) | bool(false) }}'
+      
+      # Player Logik (Standard Blueprint Logik)
+      player_data: >
+        {% set ma = integration_entities('music_assistant') %}
+        {% set ma_names = ma | map('state_attr', 'friendly_name') | list %}
+        {% set ns = namespace(players=[]) %} 
+        {% for player in media_player | default([], true) %}
+          {% if player in ma %}
+            {% set ns.players = ns.players + [player] %}
+          {% elif player in ma_names %}
+            {% set entity = ma | select('is_state_attr', 'friendly_name', player) | list %}
+            {% set ns.players = ns.players + entity %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.players }}
+      target_data:
+        area_id: '{{ area | default(''NA'', true) }}'
+        entity_id: '{{ ''NA'' if area | default and not player_data else (player_data or default_player) | default(''NA'', true) }}'
 
-      {% set ma_names = ma | map(''state_attr'', ''friendly_name'') | list %}
+  # Validierung des Targets
+  - if:
+      - condition: template
+        value_template: '{{ not (area | default or player_data or default_player) }}'
+    then:
+      - stop: No valid target for Music Assistant Voice script found
 
-      {% set ns = namespace(players=[]) %} {% for player in media_player | default([],
-      true) %}
+  # -----------------------------------------------------------
+  # NEU: Der "Smart Search" Schritt
+  # Wir suchen erst, um die iTunes-URI zu bekommen!
+  # -----------------------------------------------------------
+  - action: music_assistant.search
+    data:
+      name: "{{ media_id }}"
+      media_type: "{{ media_type }}"
+      limit: 5
+    response_variable: raw_result
 
-      {% if player in ma %}
-
-      {% set ns.players = ns.players + [player] %}
-
-      {% elif player in ma_names %}
-
-      {% set entity = ma | select(''is_state_attr'', ''friendly_name'', player) |
-      list %}
-
-      {% set ns.players = ns.players + entity %}
-
-      {% endif %}
-
-      {% endfor %}
-
-      {{ ns.players }}'
-    target_data:
-      area_id: '{{ area | default(''NA'', true) }}'
-      entity_id: '{{ ''NA'' if area | default and not player_data else (player_data
-        or default_player) | default(''NA'', true) }}'
-    invalid_target:
-      response: Unable to find valid target
-- if:
-  - condition: template
-    value_template: '{{ not (area | default or player_data or default_player) }}'
-  then:
-  - stop: No valid target for Music Assistant Voice script found
-    response_variable: invalid_target
-- variables:
-    play_continuously: !input play_continuously
-    action_data:
-      # Wir übernehmen den Typ vom LLM (meist 'podcast')
-      media_type: '{{ media_type }}'
-      artist: '{{ artist | default(''NA'', true) }}'
-      album: '{{ album | default(''NA'', true) }}'
-
-      # INTELLIGENTE AUSWAHL:
-      media_id: >
-        {# Hole die Liste der gefundenen Podcasts #}
-        {% set pods = raw_result.podcasts | default([]) %}
+  # -----------------------------------------------------------
+  # Datenaufbereitung & iTunes-Auswahl
+  # -----------------------------------------------------------
+  - variables:
+      play_continuously: !input play_continuously
+      action_data:
+        artist: '{{ artist | default(''NA'', true) }}'
+        album: '{{ album | default(''NA'', true) }}'
+        media_type: '{{ media_type }}'
         
-        {# Suche gezielt nach einem Eintrag, der von iTunes kommt #}
-        {% set itunes_matches = pods | selectattr('uri', 'match', '^itunes') | list %}
-        
-        {# WENN iTunes gefunden wurde, nimm dessen URI (garantiert RSS-Sortierung) #}
-        {% if media_type == 'podcast' and itunes_matches | length > 0 %}
-          {{ itunes_matches[0].uri }}
-        
-        {# SONST: Nimm einfach den allerersten Treffer (Standardverhalten) #}
-        {% else %}
-          {{ media_id.split(';')[0] | trim if ';' in media_id else media_id }}
-        {% endif %}
-- alias: Play music using Music Assistant
-  action: music_assistant.play_media
-  data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-  target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-- alias: Enable/Disable shuffle on a Music Assistant Media Player
-  action: media_player.shuffle_set
-  data:
-    shuffle: '{{ shuffle }}'
-  target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-- sequence: !input actions
+        # HIER IST DIE MAGIE:
+        media_id: >
+          {% set pods = raw_result.podcasts | default([]) %}
+          
+          {# Suche nach iTunes Provider URI #}
+          {% set itunes_matches = pods | selectattr('uri', 'match', '^itunes') | list %}
+          
+          {# Wenn iTunes gefunden wurde UND wir einen Podcast wollen -> Nimm iTunes URI #}
+          {% if media_type == 'podcast' and itunes_matches | length > 0 %}
+            {{ itunes_matches[0].uri }}
+          
+          {# Fallback: Nimm das, was das LLM gesagt hat (oder den ersten Treffer) #}
+          {% else %}
+             {{ media_id }}
+          {% endif %}
+          
+        radio_mode: >
+           {% if media_type == 'podcast' %}
+             false
+           {% else %}
+             {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
+           {% endif %}
+
+  # Abspielen
+  - alias: Play music/podcast using Music Assistant
+    action: music_assistant.play_media
+    data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
+    target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
+
+  # Shuffle setzen
+  - alias: Enable/Disable shuffle
+    action: media_player.shuffle_set
+    data:
+      shuffle: '{{ shuffle }}'
+    target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
+  
+  # Zusätzliche Aktionen
+  - sequence: !input actions
