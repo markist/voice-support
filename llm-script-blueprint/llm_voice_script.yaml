@@ -405,13 +405,13 @@ sequence:
       limit: 5
     response_variable: raw_result
 
-  # -----------------------------------------------------------
-  # 2. DATENAUFBEREITUNG (Hier lag der Fehler)
+# -----------------------------------------------------------
+  # 2. DATENAUFBEREITUNG (Fix für Dynamic Tracks Error)
   # -----------------------------------------------------------
   - variables:
       play_continuously: !input play_continuously
       
-      # 1. URI Berechnung
+      # Schritt A: URI berechnen (Dies muss vor action_data stehen!)
       found_uri: >
         {% if media_type in ['podcast', 'podcast_episode'] %}
           {% set pods = raw_result.podcasts | default([]) %}
@@ -421,27 +421,28 @@ sequence:
           NA
         {% endif %}
 
-      # 2. Paket schnüren
+      # Schritt B: Das Paket schnüren
       action_data:
         artist: '{{ artist | default(''NA'', true) }}'
         album: '{{ album | default(''NA'', true) }}'
         
+        # Typ setzen
         media_type: >
           {{ 'podcast' if found_uri != 'NA' else media_type }}
         
+        # ID setzen
         media_id: >
           {{ found_uri if found_uri != 'NA' else (media_id.split(';')[0] | trim) }}
           
-        # HIER WAR DER FEHLER:
-        # Bei Podcasts muss radio_mode zwingend 'NA' sein (damit der Parameter gelöscht wird).
-        # False reicht nicht, der Key muss weg!
+        # KORREKTUR: Wir prüfen direkt found_uri, da media_type hier noch nicht aktualisiert ist!
         radio_mode: >
-           {% if media_type == 'podcast' or found_uri != 'NA' or media_type == 'podcast_episode' %}
+           {# WENN iTunes-URI gefunden ODER LLM wollte Podcast/Episode -> Zwingend NA #}
+           {% if found_uri != 'NA' or media_type in ['podcast', 'podcast_episode'] %}
              NA
+           {# SONST: Standard-Logik für Musik #}
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
            {% endif %}
-
   # Abspielen
   - alias: Play music/podcast using Music Assistant
     action: music_assistant.play_media
