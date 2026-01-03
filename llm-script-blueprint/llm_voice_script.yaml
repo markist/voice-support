@@ -393,32 +393,26 @@ sequence:
     then:
       - stop: No valid target for Music Assistant Voice script found
 
-# -----------------------------------------------------------
-  # NEU: Intelligente Suche
-  # Falls Podcast/Episode gesucht wird -> Suche "podcast" (Container)
-  # Sonst -> Suche genau das, was das LLM wollte (track, artist, etc.)
+## -----------------------------------------------------------
+  # 1. DIE SUCHE
   # -----------------------------------------------------------
   - action: music_assistant.search
     data:
-      config_entry_id: 01JNPPZFB87GV8RBG5ARMMMY2F
+      config_entry_id: "01JNPPZFB87GV8RBG5ARMMMY2F"
       name: "{{ media_id }}"
-      media_type: >
-        {% if media_type == 'podcast_episode' %}
-          podcast
-        {% else %}
-          {{ media_type }}
-        {% endif %}
+      media_type: 
+        - "{{ 'podcast' if media_type == 'podcast_episode' else media_type }}"
       limit: 5
     response_variable: raw_result
-# -----------------------------------------------------------
-# -----------------------------------------------------------
-  # Datenaufbereitung & iTunes-Auswahl (KORRIGIERT)
+
+  # -----------------------------------------------------------
+  # 2. DATENAUFBEREITUNG (Hier lag der Fehler)
   # -----------------------------------------------------------
   - variables:
       play_continuously: !input play_continuously
       
-      # 1. Zuerst die iTunes-URI berechnen (außerhalb von action_data!)
-      itunes_uri: >
+      # SCHRITT A: Die Berechnung (MUSS AUSSERHALB VON action_data SEIN!)
+      found_uri: >
         {% if media_type in ['podcast', 'podcast_episode'] %}
           {% set pods = raw_result.podcasts | default([]) %}
           {% set matches = pods | selectattr('uri', 'match', '^itunes') | list %}
@@ -427,21 +421,20 @@ sequence:
           NA
         {% endif %}
 
-      # 2. Das Paket für den Player schnüren
+      # SCHRITT B: Das Paket für den Player (Darf NUR artist, album, media_type, media_id, radio_mode enthalten)
       action_data:
         artist: '{{ artist | default(''NA'', true) }}'
         album: '{{ album | default(''NA'', true) }}'
         
-        # Typ Bestimmung: Wenn iTunes gefunden, dann 'podcast' (Container) nutzen
+        # Logik: Wenn wir eine iTunes URI haben, nehmen wir die. Sonst das Original.
         media_type: >
-          {{ 'podcast' if itunes_uri != 'NA' else media_type }}
+          {{ 'podcast' if found_uri != 'NA' else media_type }}
         
-        # ID Bestimmung: iTunes URI oder Original Name
         media_id: >
-          {{ itunes_uri if itunes_uri != 'NA' else (media_id.split(';')[0] | trim) }}
+          {{ found_uri if found_uri != 'NA' else (media_id.split(';')[0] | trim) }}
           
         radio_mode: >
-           {% if media_type == 'podcast' or itunes_uri != 'NA' %}
+           {% if media_type == 'podcast' or found_uri != 'NA' %}
              false
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
