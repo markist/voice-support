@@ -404,13 +404,27 @@ sequence:
 - variables:
     play_continuously: !input play_continuously
     action_data:
-      media_id: '{{ media_id.split('';'') | map(''trim'') | list if '';'' in media_id
-        else media_id }}'
+      # Wir übernehmen den Typ vom LLM (meist 'podcast')
       media_type: '{{ media_type }}'
       artist: '{{ artist | default(''NA'', true) }}'
       album: '{{ album | default(''NA'', true) }}'
-      radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
-        == ''Always'' and media_type != ''radio'' or ''NA'' }}'
+
+      # INTELLIGENTE AUSWAHL:
+      media_id: >
+        {# Hole die Liste der gefundenen Podcasts #}
+        {% set pods = raw_result.podcasts | default([]) %}
+        
+        {# Suche gezielt nach einem Eintrag, der von iTunes kommt #}
+        {% set itunes_matches = pods | selectattr('uri', 'match', '^itunes') | list %}
+        
+        {# WENN iTunes gefunden wurde, nimm dessen URI (garantiert RSS-Sortierung) #}
+        {% if media_type == 'podcast' and itunes_matches | length > 0 %}
+          {{ itunes_matches[0].uri }}
+        
+        {# SONST: Nimm einfach den allerersten Treffer (Standardverhalten) #}
+        {% else %}
+          {{ media_id.split(';')[0] | trim if ';' in media_id else media_id }}
+        {% endif %}
 - alias: Play music using Music Assistant
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
