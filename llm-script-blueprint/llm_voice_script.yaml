@@ -38,7 +38,7 @@ blueprint:
     separated by a semicolon (`;`)|
 
     |`media_type`|Will be one of the following: `"track"`, `"artist"`, `"album"`,
-    `"playlist"`, `"radio"`, , `"podcast"`|
+    `"playlist"`, `"radio"`, `"podcast"`, `"audiobook"`|
 
     |`artist`|The artist requested in the voice command. Will be empty in case the
     artist is not relevant or when there are multiple artists requested|
@@ -152,7 +152,7 @@ blueprint:
 
             - "podcast": for a podcast series.
             
-            - "podcast_episode": for a specific episode of a podcast.
+            - "audiobook": for an audiobook.
 
             media_type is mandatory and must always be provided. If a request does
             not match any of these types, for example when music from a specific genre
@@ -166,7 +166,7 @@ blueprint:
               multiple: false
           default: '"artist" is the artist the user requests to play, or the artist
             of a specific track if the user mentions it while requesting to play a
-            specific song OR the podcast creator/host. If the artist is unknown or there are multiple artists
+            specific song OR the podcast creator/host OR the author of the audiobook. If the artist is unknown or there are multiple artists
             requested, use an empty string.'
         album_prompt:
           name: Album Prompt
@@ -177,7 +177,7 @@ blueprint:
               multiple: false
           default: '"album" is the album the user requests to play, or the album a
             specific track is from if the user mentions it when requesting to play
-            a specific song or the podcast name if media_type is podcast_episode. If the album is unknown or there are multiple albums
+            a specific song. If the album is unknown or there are multiple albums
             requested, use an empty string.'
         media_id_prompt:
           name: Media ID Prompt
@@ -213,7 +213,7 @@ blueprint:
 
             - If the search is a podcast: provide the name of the podcast.
 
-            - If the search is a podcast_episode: provide the name of the episode.
+            - If the search is an audiobook: provide the title of the audiobook.
 
             This is a mandatory argument and must always be provided.'
         media_description_prompt:
@@ -310,7 +310,7 @@ fields:
         - playlist
         - radio
         - podcast
-        - podcast_episode
+        - audiobook
     name: Media Type
     description: !input media_type_prompt
     required: true
@@ -401,7 +401,7 @@ sequence:
       config_entry_id: "01JNPPZFB87GV8RBG5ARMMMY2F"
       name: "{{ media_id }}"
       media_type: 
-        - "{{ 'podcast' if media_type == 'podcast_episode' else media_type }}"
+        - "{{ media_type }}"
       limit: 5
     response_variable: raw_result
 
@@ -413,7 +413,7 @@ sequence:
       
       # Schritt A: URI berechnen (Dies muss vor action_data stehen!)
       found_uri: >
-        {% if media_type in ['podcast', 'podcast_episode'] %}
+        {% if media_type == 'podcast' %}
           {% set pods = raw_result.podcasts | default([]) %}
           {% set matches = pods | selectattr('uri', 'match', '^itunes') | list %}
           {{ matches[0].uri if matches | length > 0 else 'NA' }}
@@ -436,8 +436,7 @@ sequence:
           
         # KORREKTUR: Wir prüfen direkt found_uri, da media_type hier noch nicht aktualisiert ist!
         radio_mode: >
-           {# WENN iTunes-URI gefunden ODER LLM wollte Podcast/Episode -> Zwingend NA #}
-           {% if found_uri != 'NA' or media_type in ['podcast', 'podcast_episode'] %}
+           {% if found_uri != 'NA' or media_type in ['podcast', 'audiobook'] %}
              NA
            {# SONST: Standard-Logik für Musik #}
            {% else %}
