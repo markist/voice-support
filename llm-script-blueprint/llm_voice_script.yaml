@@ -406,12 +406,12 @@ sequence:
     response_variable: raw_result
 
 # -----------------------------------------------------------
-  # 2. DATENAUFBEREITUNG (Fix für Dynamic Tracks Error)
+  # 2. DATENAUFBEREITUNG (Mit Fix für "Unknown" Artist)
   # -----------------------------------------------------------
   - variables:
       play_continuously: !input play_continuously
       
-      # Schritt A: URI berechnen (Dies muss vor action_data stehen!)
+      # Schritt A: URI berechnen (iTunes-Logik nur für Podcasts)
       found_uri: >
         {% if media_type == 'podcast' %}
           {% set pods = raw_result.podcasts | default([]) %}
@@ -423,10 +423,17 @@ sequence:
 
       # Schritt B: Das Paket schnüren
       action_data:
-        artist: '{{ artist | default(''NA'', true) }}'
+        # FIX: Wenn Artist "Unknown" ist, setzen wir "NA", damit der Filter entfernt wird.
+        artist: >
+          {% if artist in ['Unknown', 'unknown', 'None', ''] %}
+            NA
+          {% else %}
+            {{ artist | default('NA', true) }}
+          {% endif %}
+
         album: '{{ album | default(''NA'', true) }}'
         
-        # Typ setzen
+        # Typ setzen (Override nur bei gefundenem iTunes Podcast)
         media_type: >
           {{ 'podcast' if found_uri != 'NA' else media_type }}
         
@@ -434,11 +441,10 @@ sequence:
         media_id: >
           {{ found_uri if found_uri != 'NA' else (media_id.split(';')[0] | trim) }}
           
-        # KORREKTUR: Wir prüfen direkt found_uri, da media_type hier noch nicht aktualisiert ist!
+        # radio_mode MUSS 'NA' sein für Podcast UND Audiobook
         radio_mode: >
            {% if found_uri != 'NA' or media_type in ['podcast', 'audiobook'] %}
              NA
-           {# SONST: Standard-Logik für Musik #}
            {% else %}
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
            {% endif %}
