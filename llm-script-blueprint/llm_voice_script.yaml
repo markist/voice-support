@@ -348,7 +348,7 @@ sequence:
       for_each: "{{ power_target_players }}"
       sequence:
         - wait_template: "{{ not is_state(repeat.item, 'unavailable') }}"
-          timeout: "00:01:30"
+          timeout: "00:02:30"
           continue_on_timeout: true
 
   # Abspielen
