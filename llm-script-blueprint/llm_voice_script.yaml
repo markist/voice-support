@@ -230,23 +230,47 @@ sequence:
     then:
       - stop: No valid target for Music Assistant Voice script found
 
-  # -----------------------------------------------------------
-  # NEW: POWER MANAGEMENT (Auto-On für stromlose Speaker)
+# -----------------------------------------------------------
+  # POWER MANAGEMENT (Erweitert: Löst auch Räume auf!)
   # -----------------------------------------------------------
   - variables:
+      # 1. Map
       player_power_map:
-        "media_player.squeezeplay_b8_27_eb_64_0b_40": "switch.musik_bad"
-        "media_player.squeezeplay_kea_wlan": "switch.musik_kea"
-        "media_player.squeezeplay_1c_bf_ce_3d_17_3e": "switch.musik_kuche"
-        "media_player.squeezeplay_00_0f_53_84_36_34": "switch.musik_schlafzimmer"  
-        "media_player.squeezeplay_emil": "switch.hobbykeller_musik_und_medien"  
-        "media_player.squeezeplay_waschkeller": "switch.musik_waschkeller"  
-        "media_player.squeezeplay_wohnzimmer": "switch.musikwohnzimmer"
+        "media_player.music_assistant_kueche": "switch.musik_kueche"
+        "media_player.voicetest": "switch.voicetest_strom"
+        "media_player.music_assistant_schlafzimmer": "switch.schlafzimmer_strom"
+        # ^^^ Achte darauf, dass hier deine ECHTE Entity ID vom Schlafzimmer-Player steht!
 
+      # 2. Wir suchen alle betroffenen Player (auch die im Raum!)
+      power_target_players: >
+        {% set ns = namespace(all=[]) %}
+        
+        {# A. Direkt genannte Player (vom LLM) #}
+        {% if player_data %}
+          {% set ns.all = ns.all + player_data %}
+        {% endif %}
+
+        {# B. Player im genannten Raum suchen #}
+        {% if area %}
+          {# Liste aller MA-Player im System #}
+          {% set all_ma = integration_entities('music_assistant') %}
+          {% for area_id in area %}
+            {# Finde alle Entities im Raum, die AUCH MA-Player sind #}
+            {% set area_players = area_entities(area_id) | select('in', all_ma) | list %}
+            {% set ns.all = ns.all + area_players %}
+          {% endfor %}
+        {% endif %}
+        
+        {# C. Fallback auf Default Player #}
+        {% if ns.all | length == 0 and default_player %}
+           {% set ns.all = [default_player] %}
+        {% endif %}
+        
+        {{ ns.all | unique | list }}
+
+  # 3. Schleife über alle gefundenen Player -> Schalter anmachen
   - repeat:
-      for_each: >
-        {% set targets = target_data.entity_id %}
-        {{ targets if targets is list else [targets] }}
+      for_each: "{{ power_target_players }}"
       sequence:
         - variables:
             assigned_switch: "{{ player_power_map.get(repeat.item) }}"
