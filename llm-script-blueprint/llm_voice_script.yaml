@@ -191,14 +191,12 @@ fields:
     description: !input shuffle_prompt
 sequence:
   # -----------------------------------------------------------
-  # CONFIGURATION BLOCK (Variablen definieren)
+  # 1. KONFIGURATION (Hier wird die Map definiert!)
   # -----------------------------------------------------------
   - variables:
-      # Die ID kommt jetzt sauber aus dem Blueprint-Input
       mass_config_id: !input music_assistant_entry_id
       
-      # MAPPING: Welcher Player gehört zu welchem Schalter?
-      # Ich habe hier deine ECHTEN Squeezeplayer eingetragen aus dem Trace!
+      # WICHTIG: Diese Definition muss GANZ OBEN stehen!
       player_power_map:
         "media_player.squeezeplay_1c_bf_ce_3d_17_3e": "switch.musik_kuche"
         "media_player.squeezeplay_00_0f_53_84_36_34": "switch.musik_schlafzimmer"
@@ -209,13 +207,13 @@ sequence:
         "media_player.squeezeplay_wohnzimmer": "switch.musikwohnzimmer"
         "media_player.voicetest": "switch.voicetest_strom"
 
-      # Standard Blueprint Variablen
+      # Standard Variablen
       version: 20250106
       default_player: !input default_player
       shuffle: '{{ shuffle | default(false, true) | bool(false) }}'
-      
+
   # -----------------------------------------------------------
-  # TARGET LOGIC
+  # 2. PLAYER LOGIK (Wer ist gemeint?)
   # -----------------------------------------------------------
   - variables:
       player_data: >
@@ -235,7 +233,7 @@ sequence:
         area_id: '{{ area | default(''NA'', true) }}'
         entity_id: '{{ ''NA'' if area | default and not player_data else (player_data or default_player) | default(''NA'', true) }}'
 
-  # Validierung des Targets
+  # Validierung
   - if:
       - condition: template
         value_template: '{{ not (area | default or player_data or default_player) }}'
@@ -243,7 +241,7 @@ sequence:
       - stop: No valid target for Music Assistant Voice script found
 
   # -----------------------------------------------------------
-  # POWER MANAGEMENT (Fix: Registry Lookup & defined Variables)
+  # 3. POWER MANAGEMENT (Hier wurde der Fehler geworfen)
   # -----------------------------------------------------------
   - variables:
       power_target_players: >
@@ -254,16 +252,16 @@ sequence:
           {% set ns.all = ns.all + player_data %}
         {% endif %}
 
-        {# B. Player im genannten Raum suchen (via Registry) #}
+        {# B. Player im genannten Raum suchen (via Registry Lookup) #}
         {% if area %}
-           {# 1. Wir holen alle Entity-IDs, die in den angeforderten Räumen sind #}
+           {# 1. Echte Entity-IDs aus dem Raum holen #}
            {% set entities_in_area = namespace(list=[]) %}
            {% for area_uuid in area %}
-              {# area_entities akzeptiert die kryptische UUID und liefert echte Entity-IDs #}
               {% set entities_in_area.list = entities_in_area.list + area_entities(area_uuid) %}
            {% endfor %}
 
-           {# 2. Wir prüfen unsere Map: Ist einer unserer Map-Player im Raum? #}
+           {# 2. Prüfen: Ist einer unserer Map-Player in diesem Raum? #}
+           {# HIER passierte der Fehler, weil player_power_map fehlte #}
            {% for player_key in player_power_map.keys() %}
               {% if player_key in entities_in_area.list %}
                   {% set ns.all = ns.all + [player_key] %}
@@ -271,13 +269,14 @@ sequence:
            {% endfor %}
         {% endif %}
         
-        {# C. Fallback auf Default #}
+        {# C. Fallback #}
         {% if ns.all | length == 0 and default_player %}
            {% set ns.all = [default_player] %}
         {% endif %}
         
         {{ ns.all | unique | list }}
 
+  # Strom einschalten
   - repeat:
       for_each: "{{ power_target_players }}"
       sequence:
