@@ -236,10 +236,15 @@ sequence:
   - variables:
       # 1. Map
       player_power_map:
-        "media_player.music_assistant_kueche": "switch.musik_kueche"
-        "media_player.voicetest": "switch.voicetest_strom"
-        "media_player.music_assistant_schlafzimmer": "switch.schlafzimmer_strom"
-        # ^^^ Achte darauf, dass hier deine ECHTE Entity ID vom Schlafzimmer-Player steht!
+        "media_player.squeezeplay_b8_27_eb_64_0b_40": "switch.musik_bad"
+        "media_player.squeezeplay_kea_wlan": "switch.musik_kea"
+        "media_player.squeezeplay_1c_bf_ce_3d_17_3e": "switch.musik_kuche"
+        "media_player.squeezeplay_00_0f_53_84_36_34": "switch.musik_schlafzimmer"  
+        "media_player.squeezeplay_emil": "switch.hobbykeller_musik_und_medien"  
+        "media_player.squeezeplay_waschkeller": "switch.musik_waschkeller"  
+        "media_player.squeezeplay_wohnzimmer": "switch.musikwohnzimmer"
+
+
 
       # 2. Wir suchen alle betroffenen Player (auch die im Raum!)
       power_target_players: >
