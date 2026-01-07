@@ -365,21 +365,23 @@ sequence:
         target_data: "{{ final_target_data_clean }}"
         shuffle: "{{ shuffle }}"
   
-  # -----------------------------------------------------------
+# -----------------------------------------------------------
   # 7. Additional Actions & FEEDBACK AN LLM
   # -----------------------------------------------------------
   - sequence: !input actions
 
-  # FIX: Intelligente Antwort basierend auf 'devices_were_off'
+  # FIX: IDs in lesbare Namen umwandeln (Schlafzimmer statt e755...)
   - variables:
       llm_response_message:
         success: true
         instruction: "WICHTIG: Antworte dem Nutzer EXAKT mit dem Text im Feld 'speech_response'. Verändere ihn nicht und fasse ihn nicht zusammen!"
         speech_response: >
           {% if devices_were_off %}
-            Die Lautsprecher im Raum {{ area | default('Bereich', true) }} wurden eingeschaltet. Die Wiedergabe von "{{ media_id }}" startet automatisch in etwa 30 Sekunden.
+            {# Wir wandeln die IDs in Namen um, z.B. 'Schlafzimmer' #}
+            {% set loc = area | map('area_name') | join(', ') if area else 'Zielbereich' %}
+            Die Lautsprecher in {{ loc }} wurden eingeschaltet, die Wiedergabe von "{{ media_id }}" startet zeitnah.
           {% else %}
-            Wiedergabe im Raum {{ area | default('Bereich', true) }} von "{{ media_id }}" gestartet.
+            Wiedergabe von "{{ media_id }}" gestartet.
           {% endif %}
   
   - stop: "Async Handoff Successful"
