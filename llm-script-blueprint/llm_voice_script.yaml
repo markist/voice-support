@@ -359,16 +359,18 @@ sequence:
         target_data: "{{ final_target_data_clean }}"
         shuffle: "{{ shuffle }}"
   
-  # -----------------------------------------------------------
+# -----------------------------------------------------------
   # 7. Additional Actions & FEEDBACK AN LLM
   # -----------------------------------------------------------
   - sequence: !input actions
 
-  # HIER IST DER NEUE TEIL: Wir geben dem LLM Text zurück!
+  # FIX: Wir bauen ein Dictionary (Objekt), kein reinen String!
   - variables:
-      llm_response_message: >
-        Die Lautsprecher wurden eingeschaltet und der Musik-Auftrag wurde an das Hintergrundsystem übergeben. 
-        Die Wiedergabe von "{{ media_id }}" startet automatisch in wenigen Momenten, sobald die Geräte hochgefahren sind.
+      llm_response_message:
+        success: true
+        message: >
+          Die Lautsprecher wurden eingeschaltet und der Musik-Auftrag wurde an das Hintergrundsystem übergeben. 
+          Die Wiedergabe von "{{ media_id }}" startet automatisch in wenigen Momenten, sobald die Geräte hochgefahren sind.
   
   - stop: "Async Handoff Successful"
     response_variable: llm_response_message
