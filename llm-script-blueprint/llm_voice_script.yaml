@@ -1,7 +1,7 @@
 blueprint:
   name: LLM Script for Music Assistant voice requests
   source_url: https://github.com/markist/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
-  description: Script with Auto-Power-On (Registry Fix), Audiobook & Podcast Logic.
+  description: "ASYNC Version: Starts Power & Search, then offloads playback to a background script."
   domain: script
   author: TheFes (Modified by Gemini)
   homeassistant:
@@ -9,10 +9,18 @@ blueprint:
   input:
     music_assistant_entry_id:
       name: Music Assistant Integration ID
-      description: "Die ID deiner Music Assistant Integration (z.B. 01JNPPZFB87GV8RBG5ARMMMY2F)."
+      description: "Die ID deiner Music Assistant Integration."
       selector:
         text: {}
       default: "01JNPPZFB87GV8RBG5ARMMMY2F"
+    
+    background_script:
+      name: Background Worker Script
+      description: "Das Skript, das asynchron wartet und abspielt."
+      selector:
+        entity:
+          domain: script
+      default: script.music_assistant_background_player
 
     music_assistant_settings:
       name: Settings for Music Assistant playback
@@ -126,7 +134,7 @@ blueprint:
           default: []
 mode: parallel
 max_exceeded: silent
-description: Play music based on voice request (Auto-Power & Logic Fixes).
+description: Play music asynchronously (Fix for slow booting speakers).
 fields:
   media_type:
     selector:
@@ -191,12 +199,12 @@ fields:
     description: !input shuffle_prompt
 sequence:
   # -----------------------------------------------------------
-  # 1. KONFIGURATION (Hier wird die Map definiert!)
+  # 1. KONFIGURATION
   # -----------------------------------------------------------
   - variables:
       mass_config_id: !input music_assistant_entry_id
+      background_worker: !input background_script
       
-      # WICHTIG: Diese Definition muss GANZ OBEN stehen!
       player_power_map:
         "media_player.squeezeplay_1c_bf_ce_3d_17_3e": "switch.musik_kuche"
         "media_player.squeezeplay_00_0f_53_84_36_34": "switch.musik_schlafzimmer"
@@ -207,13 +215,12 @@ sequence:
         "media_player.squeezeplay_wohnzimmer": "switch.musikwohnzimmer"
         "media_player.voicetest": "switch.voicetest_strom"
 
-      # Standard Variablen
-      version: 20250106
+      version: 20250106_async
       default_player: !input default_player
       shuffle: '{{ shuffle | default(false, true) | bool(false) }}'
 
   # -----------------------------------------------------------
-  # 2. PLAYER LOGIK (Wer ist gemeint?)
+  # 2. PLAYER LOGIK
   # -----------------------------------------------------------
   - variables:
       player_data: >
@@ -241,7 +248,7 @@ sequence:
       - stop: No valid target for Music Assistant Voice script found
 
   # -----------------------------------------------------------
-  # 3. POWER MANAGEMENT (Hier wurde der Fehler geworfen)
+  # 3. POWER MANAGEMENT
   # -----------------------------------------------------------
   - variables:
       power_target_players: >
@@ -252,16 +259,13 @@ sequence:
           {% set ns.all = ns.all + player_data %}
         {% endif %}
 
-        {# B. Player im genannten Raum suchen (via Registry Lookup) #}
+        {# B. Player im genannten Raum suchen #}
         {% if area %}
-           {# 1. Echte Entity-IDs aus dem Raum holen #}
            {% set entities_in_area = namespace(list=[]) %}
            {% for area_uuid in area %}
               {% set entities_in_area.list = entities_in_area.list + area_entities(area_uuid) %}
            {% endfor %}
 
-           {# 2. Prüfen: Ist einer unserer Map-Player in diesem Raum? #}
-           {# HIER passierte der Fehler, weil player_power_map fehlte #}
            {% for player_key in player_power_map.keys() %}
               {% if player_key in entities_in_area.list %}
                   {% set ns.all = ns.all + [player_key] %}
@@ -276,7 +280,7 @@ sequence:
         
         {{ ns.all | unique | list }}
 
-  # Strom einschalten
+  # Strom AN
   - repeat:
       for_each: "{{ power_target_players }}"
       sequence:
@@ -291,7 +295,7 @@ sequence:
                 entity_id: "{{ assigned_switch }}"
 
   # -----------------------------------------------------------
-  # 1. DIE SUCHE
+  # 4. DIE SUCHE
   # -----------------------------------------------------------
   - action: music_assistant.search
     data:
@@ -303,12 +307,11 @@ sequence:
     response_variable: raw_result
 
   # -----------------------------------------------------------
-  # 2. DATENAUFBEREITUNG
+  # 5. DATENAUFBEREITUNG
   # -----------------------------------------------------------
   - variables:
       play_continuously: !input play_continuously
       
-      # Schritt A: URI berechnen 
       found_uri: >
         {% if media_type == 'podcast' %}
           {% set pods = raw_result.podcasts | default([]) %}
@@ -321,7 +324,6 @@ sequence:
           NA
         {% endif %}
 
-      # Schritt B: Das Paket schnüren
       action_data:
         artist: >
           {% if artist in ['Unknown', 'unknown', 'None', ''] %}
@@ -341,28 +343,32 @@ sequence:
              {{ false if play_continuously == 'Never' else play_continuously == 'Always' and media_type != 'radio' or 'NA' }}
            {% endif %}
 
-  # -----------------------------------------------------------
-  # 3. WARTEN AUF PLAYER
-  # -----------------------------------------------------------
-  - repeat:
-      for_each: "{{ power_target_players }}"
-      sequence:
-        - wait_template: "{{ not is_state(repeat.item, 'unavailable') }}"
-          timeout: "00:02:30"
-          continue_on_timeout: true
+      final_action_data_clean: "{{ dict(action_data.items() | rejectattr('1', 'eq', 'NA')) }}"
+      final_target_data_clean: "{{ dict(target_data.items() | rejectattr('1', 'eq', 'NA')) }}"
 
-  # Abspielen
-  - alias: Play music/podcast using Music Assistant
-    action: music_assistant.play_media
-    data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-    target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-
-  # Shuffle setzen
-  - alias: Enable/Disable shuffle
-    action: media_player.shuffle_set
+  # -----------------------------------------------------------
+  # 6. ASYNC HANDOVER
+  # -----------------------------------------------------------
+  - action: script.turn_on
+    target:
+      entity_id: "{{ background_worker }}"
     data:
-      shuffle: '{{ shuffle }}'
-    target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
+      variables:
+        target_players: "{{ power_target_players }}"
+        action_data: "{{ final_action_data_clean }}"
+        target_data: "{{ final_target_data_clean }}"
+        shuffle: "{{ shuffle }}"
   
-  # Zusätzliche Aktionen
+  # -----------------------------------------------------------
+  # 7. Additional Actions & FEEDBACK AN LLM
+  # -----------------------------------------------------------
   - sequence: !input actions
+
+  # HIER IST DER NEUE TEIL: Wir geben dem LLM Text zurück!
+  - variables:
+      llm_response_message: >
+        Die Lautsprecher wurden eingeschaltet und der Musik-Auftrag wurde an das Hintergrundsystem übergeben. 
+        Die Wiedergabe von "{{ media_id }}" startet automatisch in wenigen Momenten, sobald die Geräte hochgefahren sind.
+  
+  - stop: "Async Handoff Successful"
+    response_variable: llm_response_message
