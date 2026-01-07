@@ -134,7 +134,7 @@ blueprint:
           default: []
 mode: parallel
 max_exceeded: silent
-description: Play music asynchronously (Fix for slow booting speakers).
+description: Play music asynchronously (Smart Response Logic).
 fields:
   media_type:
     selector:
@@ -215,7 +215,7 @@ sequence:
         "media_player.squeezeplay_wohnzimmer": "switch.musikwohnzimmer"
         "media_player.voicetest": "switch.voicetest_strom"
 
-      version: 20250106_async
+      version: 20250106_async_smart
       default_player: !input default_player
       shuffle: '{{ shuffle | default(false, true) | bool(false) }}'
 
@@ -248,39 +248,45 @@ sequence:
       - stop: No valid target for Music Assistant Voice script found
 
   # -----------------------------------------------------------
-  # 3. POWER MANAGEMENT
+  # 3. POWER MANAGEMENT (Check & Switch On)
   # -----------------------------------------------------------
   - variables:
       power_target_players: >
         {% set ns = namespace(all=[]) %}
-        
         {# A. Direkt genannte Player #}
         {% if player_data %}
           {% set ns.all = ns.all + player_data %}
         {% endif %}
-
         {# B. Player im genannten Raum suchen #}
         {% if area %}
            {% set entities_in_area = namespace(list=[]) %}
            {% for area_uuid in area %}
               {% set entities_in_area.list = entities_in_area.list + area_entities(area_uuid) %}
            {% endfor %}
-
            {% for player_key in player_power_map.keys() %}
               {% if player_key in entities_in_area.list %}
                   {% set ns.all = ns.all + [player_key] %}
               {% endif %}
            {% endfor %}
         {% endif %}
-        
         {# C. Fallback #}
         {% if ns.all | length == 0 and default_player %}
            {% set ns.all = [default_player] %}
         {% endif %}
-        
         {{ ns.all | unique | list }}
 
-  # Strom AN
+      # NEU: Prüfen, ob wir überhaupt etwas anschalten müssen
+      devices_were_off: >
+        {% set ns = namespace(needs_power=false) %}
+        {% for player in power_target_players %}
+           {% set assigned_switch = player_power_map.get(player) %}
+           {% if assigned_switch and is_state(assigned_switch, 'off') %}
+              {% set ns.needs_power = true %}
+           {% endif %}
+        {% endfor %}
+        {{ ns.needs_power }}
+
+  # Strom AN (nur wenn nötig, aber repeat läuft sicherheitshalber durch)
   - repeat:
       for_each: "{{ power_target_players }}"
       sequence:
@@ -359,18 +365,22 @@ sequence:
         target_data: "{{ final_target_data_clean }}"
         shuffle: "{{ shuffle }}"
   
-# -----------------------------------------------------------
+  # -----------------------------------------------------------
   # 7. Additional Actions & FEEDBACK AN LLM
   # -----------------------------------------------------------
   - sequence: !input actions
 
-  # FIX: Wir bauen ein Dictionary (Objekt), kein reinen String!
+  # FIX: Intelligente Antwort basierend auf 'devices_were_off'
   - variables:
       llm_response_message:
         success: true
-        message: >
-          Die Lautsprecher wurden eingeschaltet und der Musik-Auftrag wurde an das Hintergrundsystem übergeben. 
-          Die Wiedergabe von "{{ media_id }}" startet automatisch in wenigen Momenten, sobald die Geräte hochgefahren sind.
+        instruction: "WICHTIG: Antworte dem Nutzer EXAKT mit dem Text im Feld 'speech_response'. Verändere ihn nicht und fasse ihn nicht zusammen!"
+        speech_response: >
+          {% if devices_were_off %}
+            Die Lautsprecher im Raum {{ area | default('Bereich', true) }} wurden eingeschaltet. Die Wiedergabe von "{{ media_id }}" startet automatisch in etwa 30 Sekunden.
+          {% else %}
+            Wiedergabe im Raum {{ area | default('Bereich', true) }} von "{{ media_id }}" gestartet.
+          {% endif %}
   
   - stop: "Async Handoff Successful"
     response_variable: llm_response_message
